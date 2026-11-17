@@ -1,0 +1,486 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Web GIS Kabupaten Sleman</title>
+
+    <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .popup-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 12px;
+        }
+
+        .popup-table td {
+            padding: 6px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .popup-table td:first-child {
+            font-weight: bold;
+            width: 40%;
+        }
+
+        .popup-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .legend-box {
+            background: white;
+            padding: 8px;
+            border-radius: 5px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+            max-width: 220px;
+            max-height: 250px;
+            overflow: auto;
+        }
+
+        .legend-box img {
+            max-width: 200px;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+<script>
+
+// ==========================================
+// 1. MEMBUAT PETA
+// ==========================================
+
+var map = L.map("map").setView(
+    [-7.677567, 110.406899], 12
+);
+
+
+// ==========================================
+// 2. MEMBUAT PANE POPUP
+// ==========================================
+
+map.createPane("polygonPopup");
+map.getPane("polygonPopup").style.zIndex = 450;
+
+map.createPane("jalanPopup");
+map.getPane("jalanPopup").style.zIndex = 460;
+
+
+// ==========================================
+// 3. BASEMAP OPENSTREETMAP
+// ==========================================
+
+var osm = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors"
+    }
+).addTo(map);
+
+
+// ==========================================
+// 4. BASEMAP ESRI WORLD IMAGERY
+// ==========================================
+
+var imagery = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri"
+    }
+);
+
+
+// ==========================================
+// 5. BASEMAP GOOGLE MAPS
+// ==========================================
+
+var googleMaps = L.tileLayer(
+    "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    {
+        maxZoom: 20,
+        subdomains: ["mt0", "mt1", "mt2", "mt3"],
+        attribution: "&copy; Google"
+    }
+);
+
+
+// ==========================================
+// 6. BASEMAP GOOGLE SATELLITE
+// ==========================================
+
+var googleSatellite = L.tileLayer(
+    "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+    {
+        maxZoom: 20,
+        subdomains: ["mt0", "mt1", "mt2", "mt3"],
+        attribution: "&copy; Google"
+    }
+);
+
+
+// ==========================================
+// 7. LAYER WMS BATAS KECAMATAN
+// ==========================================
+
+var batasWMS = L.tileLayer.wms(
+    "http://localhost:8080/geoserver/pgweb/wms",
+    {
+        layers: "pgweb:Batas_Kecamatan",
+        format: "image/png",
+        transparent: true,
+        version: "1.1.1"
+    }
+).addTo(map);
+
+
+// ==========================================
+// 8. LAYER WMS JARINGAN JALAN
+// ==========================================
+
+var jalanWMS = L.tileLayer.wms(
+    "http://localhost:8080/geoserver/pgweb/wms",
+    {
+        layers: "pgweb:Jaringan_Jalan",
+        format: "image/png",
+        transparent: true,
+        version: "1.1.1"
+    }
+).addTo(map);
+
+
+// ==========================================
+// 9. LEGENDA
+// ==========================================
+
+var legend = L.control({
+    position: "bottomleft"
+});
+
+legend.onAdd = function() {
+
+    var div = L.DomUtil.create("div", "legend-box");
+
+    var batasLegend =
+        "http://localhost:8080/geoserver/wms?" +
+        "service=WMS&version=1.1.1&request=GetLegendGraphic" +
+        "&format=image/png&layer=pgweb:Batas_Kecamatan";
+
+    var jalanLegend =
+        "http://localhost:8080/geoserver/wms?" +
+        "service=WMS&version=1.1.1&request=GetLegendGraphic" +
+        "&format=image/png&layer=pgweb:Jaringan_Jalan";
+
+    div.innerHTML =
+        "<b>Legenda Batas Kecamatan</b>" +
+        "<img src='" + batasLegend + "'>" +
+        "<hr>" +
+        "<b>Legenda Jaringan Jalan</b>" +
+        "<img src='" + jalanLegend + "'>";
+
+    L.DomEvent.disableClickPropagation(div);
+
+    return div;
+};
+
+legend.addTo(map);
+
+
+// ==========================================
+// 10. SCALE BAR
+// ==========================================
+
+L.control.scale({
+    position: "bottomright",
+    metric: true,
+    imperial: false
+}).addTo(map);
+
+
+// ==========================================
+// 11. FUNGSI MENGAMANKAN TEKS
+// ==========================================
+
+function escapeHTML(value) {
+
+    return String(value ?? "-")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+// ==========================================
+// 12. MEMBUAT POPUP ATRIBUT
+// ==========================================
+
+function buatPopup(judul, atribut) {
+
+    var content =
+        "<div class='popup-title'>" +
+        escapeHTML(judul) +
+        "</div>";
+
+    content += "<table class='popup-table'>";
+
+    Object.keys(atribut || {}).forEach(function(key) {
+
+        var value = atribut[key];
+
+        if (
+            value !== null &&
+            value !== undefined &&
+            value !== ""
+        ) {
+
+            content +=
+                "<tr>" +
+                "<td>" + escapeHTML(key) + "</td>" +
+                "<td>" + escapeHTML(value) + "</td>" +
+                "</tr>";
+
+        }
+
+    });
+
+    content += "</table>";
+
+    return content;
+}
+
+
+// ==========================================
+// 13. GEOJSON BATAS KECAMATAN
+// ==========================================
+
+var batasInteraksi = null;
+
+fetch("./Batas_Kecamatan.geojson")
+
+.then(function(response) {
+
+    if (!response.ok) {
+        throw new Error("File Batas_Kecamatan.geojson tidak ditemukan");
+    }
+
+    return response.json();
+
+})
+
+.then(function(data) {
+
+    batasInteraksi = L.geoJSON(data, {
+
+        pane: "polygonPopup",
+
+        interactive: true,
+
+        style: function() {
+
+            return {
+                color: "#000000",
+                weight: 3,
+                opacity: 0.01,
+                fillColor: "#000000",
+                fillOpacity: 0.01
+            };
+
+        },
+
+        onEachFeature: function(feature, layer) {
+
+            layer.bindPopup(
+                buatPopup(
+                    "INFORMASI BATAS KECAMATAN",
+                    feature.properties
+                ),
+                {
+                    maxWidth: 350
+                }
+            );
+
+        }
+
+    });
+
+    if (map.hasLayer(batasWMS)) {
+        batasInteraksi.addTo(map);
+    }
+
+    console.log(
+        "GeoJSON Batas Kecamatan berhasil dimuat:",
+        data.features.length,
+        "fitur"
+    );
+
+})
+
+.catch(function(error) {
+
+    console.error("Gagal memuat Batas Kecamatan:", error);
+
+});
+
+
+// ==========================================
+// 14. GEOJSON JARINGAN JALAN
+// ==========================================
+
+var jalanInteraksi = null;
+
+fetch("./jaringan_jalan.geojson")
+
+.then(function(response) {
+
+    if (!response.ok) {
+        throw new Error("File jaringan_jalan.geojson tidak ditemukan");
+    }
+
+    return response.json();
+
+})
+
+.then(function(data) {
+
+    jalanInteraksi = L.geoJSON(data, {
+
+        pane: "jalanPopup",
+
+        interactive: true,
+
+        style: function() {
+
+            return {
+                color: "#000000",
+                weight: 16,
+                opacity: 0.01
+            };
+
+        },
+
+        onEachFeature: function(feature, layer) {
+
+            layer.bindPopup(
+                buatPopup(
+                    "INFORMASI JARINGAN JALAN",
+                    feature.properties
+                ),
+                {
+                    maxWidth: 350
+                }
+            );
+
+        }
+
+    });
+
+    if (map.hasLayer(jalanWMS)) {
+        jalanInteraksi.addTo(map);
+    }
+
+    console.log(
+        "GeoJSON Jaringan Jalan berhasil dimuat:",
+        data.features.length,
+        "fitur"
+    );
+
+})
+
+.catch(function(error) {
+
+    console.error("Gagal memuat Jaringan Jalan:", error);
+
+});
+
+
+// ==========================================
+// 15. INTERAKSI LAYER CONTROL
+// ==========================================
+
+map.on("overlayadd", function(e) {
+
+    if (e.layer === batasWMS && batasInteraksi) {
+        batasInteraksi.addTo(map);
+    }
+
+    if (e.layer === jalanWMS && jalanInteraksi) {
+        jalanInteraksi.addTo(map);
+    }
+
+});
+
+
+map.on("overlayremove", function(e) {
+
+    if (e.layer === batasWMS && batasInteraksi) {
+        map.removeLayer(batasInteraksi);
+    }
+
+    if (e.layer === jalanWMS && jalanInteraksi) {
+        map.removeLayer(jalanInteraksi);
+    }
+
+});
+
+
+// ==========================================
+// 16. LAYER CONTROL
+// ==========================================
+
+var baseMaps = {
+    "OpenStreetMap": osm,
+    "Esri World Imagery": imagery,
+    "Google Maps": googleMaps,
+    "Google Satellite": googleSatellite
+};
+
+var overlayMaps = {
+    "Batas Kecamatan": batasWMS,
+    "Jaringan Jalan": jalanWMS
+};
+
+L.control.layers(
+    baseMaps,
+    overlayMaps,
+    {
+        collapsed: false
+    }
+).addTo(map);
+
+
+// ==========================================
+// 17. SELESAI
+// ==========================================
+
+console.log("Web GIS Kabupaten Sleman berhasil dijalankan");
+
+</script>
+
+</body>
+</html>
